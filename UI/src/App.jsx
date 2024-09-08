@@ -1,4 +1,5 @@
 import {useState, useEffect} from 'react';
+import {BookUp, GitMerge, GitPullRequestArrow} from "lucide-react";
 
 const App = () => {
   const [events, setEvents] = useState([]);
@@ -20,7 +21,7 @@ const App = () => {
         const latestEventId = data[0]._id;
         console.log(lastEventId, latestEventId);
         if (lastEventId !== latestEventId) {
-          setEvents(prevEvents => [...prevEvents, ...data]);
+          setEvents(prevEvents => [...data, ...prevEvents]);
         }
         setLastEventId(latestEventId);
       }
@@ -34,18 +35,37 @@ const App = () => {
     };
   }, [lastEventId]);
 
+
+  const getPushActionString = (event) => {
+    return `"${event?.author}" pushed to "${event?.to_branch}" on ${event?.timestamp}`;
+  };
+
+  const getPullRequestActionString = (event) => {
+    return `"${event?.author}" submitted a pull request from "${event?.from_branch}" to "${event?.to_branch}" on ${event?.timestamp}`;
+  };
+
+  const getMergeActionString = (event) => {
+    return `"${event?.author}" merged branch "${event?.from_branch}" to "${event?.to_branch}" on ${event?.timestamp}`;
+  };
+
   return (
     <div>
       <h1>GitHub Webhook Events</h1>
-      <ul>
+      <ul className="events">
         {events.map((event, index) => (
-          <li key={index}>
+          <li key={index} className={"event-item " + event.action}>
             {event.action === 'PUSH' ?
-              `${event?.author} pushed to ${event?.to_branch} on ${event?.timestamp}` :
+              <>
+                <BookUp/> {getPushActionString(event)}
+              </> :
               event.action === 'PULL_REQUEST' ?
-                `${event?.author} submitted a pull request from ${event?.from_branch} to ${event?.to_branch} on ${event?.timestamp}` :
+                <>
+                  <GitPullRequestArrow/> {getPullRequestActionString(event)}
+                </> :
                 event.action === 'MERGE' ?
-                  `${event?.author} merged branch ${event?.from_branch} to ${event?.to_branch} on ${event?.timestamp}` :
+                  <>
+                    <GitMerge/> {getMergeActionString(event)}
+                  </> :
                   null
             }
           </li>

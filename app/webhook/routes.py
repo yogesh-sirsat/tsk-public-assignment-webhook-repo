@@ -2,6 +2,7 @@ from bson import ObjectId
 from flask import Blueprint, jsonify, request
 from app.extensions import mongo
 from datetime import datetime
+import pytz
 
 webhook = Blueprint('Webhook', __name__, url_prefix='/webhook')
 
@@ -15,9 +16,14 @@ def get_day_with_suffix(day):
 
 
 def get_formatted_datetime_string(timestamp_str):
-    action_time = datetime.strptime(timestamp_str, '%Y-%m-%dT%H:%M:%SZ')
+    if timestamp_str.endswith('Z'):
+        timestamp_str = timestamp_str[:-1] + '+00:00'
+
+    action_time = datetime.fromisoformat(timestamp_str)
+    action_time = action_time.astimezone(pytz.UTC)
     day_with_suffix = get_day_with_suffix(action_time.day)
     rest_of_formatted_time = action_time.strftime('%B %Y - %I:%M %p UTC')
+
     return f'{day_with_suffix} {rest_of_formatted_time}'
 
 
@@ -26,7 +32,7 @@ def process_push_action(data):
         "request_id": data["head_commit"]["id"],
         "author": data["sender"]["login"],
         "action": "PUSH",
-        "from_branch": data["ref"].split("/")[-1],  # e.g. refs/heads/master
+        "to_branch": data["ref"].split("/")[-1],  # e.g. refs/heads/master
         "timestamp": get_formatted_datetime_string(data["head_commit"]["timestamp"]),
     }
     mongo.db.events.insert_one(event)
@@ -61,16 +67,16 @@ def receiver():
     try:
         data = request.json
         action_type = request.headers.get('X-GitHub-Event')
-        print(action_type)
+
         if action_type == "push":
             process_push_action(data)
         elif action_type == "pull_request" and data["action"] == "opened":
             process_pull_request_action(data)
         elif action_type == "pull_request" and data["action"] == "closed" and data["pull_request"]["merged"]:
             process_merge_action(data)
-
         return {}, 201
     except Exception as e:
+        print(e)
         return {"error": str(e)}, 500
 
 
@@ -91,4 +97,5 @@ def get_events():
 
         return jsonify(events)
     except Exception as e:
+        print(e)
         return {"error": str(e)}, 500

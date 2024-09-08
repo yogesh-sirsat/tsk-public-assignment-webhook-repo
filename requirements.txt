@@ -1,5 +1,6 @@
-Flask
+Flask~=3.0.3
 Flask-Cors
 Flask-Login
 Flask-PyMongo
-pymongo
+pymongo~=4.8.0
+pytz~=2024.1
