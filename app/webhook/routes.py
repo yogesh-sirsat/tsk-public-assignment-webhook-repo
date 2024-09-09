@@ -1,7 +1,7 @@
 from bson import ObjectId
 from flask import Blueprint, jsonify, request
 from app.extensions import mongo
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 webhook = Blueprint('Webhook', __name__, url_prefix='/webhook')
@@ -27,18 +27,7 @@ def get_formatted_datetime_string(timestamp_str):
     return f'{day_with_suffix} {rest_of_formatted_time}'
 
 
-def process_push_action(data):
-    event = {
-        "request_id": data["head_commit"]["id"],
-        "author": data["sender"]["login"],
-        "action": "PUSH",
-        "to_branch": data["ref"].split("/")[-1],  # e.g. refs/heads/master
-        "timestamp": get_formatted_datetime_string(data["head_commit"]["timestamp"]),
-    }
-    mongo.db.events.insert_one(event)
-
-
-def process_pull_request_action(data):
+def process_pull_request_action(data, is_merged=False):
     event = {
         "request_id": data["pull_request"]["id"],
         "author": data["sender"]["login"],
@@ -47,19 +36,10 @@ def process_pull_request_action(data):
         "to_branch": data["pull_request"]["base"]["ref"],
         "timestamp": get_formatted_datetime_string(data["pull_request"]["created_at"]),
     }
-    mongo.db.events.insert_one(event)
-
-
-def process_merge_action(data):
-    event = {
-        "request_id": data["pull_request"]["id"],
-        "author": data["sender"]["login"],
-        "action": "MERGE",
-        "from_branch": data["pull_request"]["head"]["ref"],
-        "to_branch": data["pull_request"]["base"]["ref"],
-        "timestamp": get_formatted_datetime_string(data["pull_request"]["merged_at"]),
-    }
-    mongo.db.events.insert_one(event)
+    if is_merged:
+        event["action"] = "MERGE"
+        event["timestamp"] = get_formatted_datetime_string(data["pull_request"]["merged_at"])
+    return event
 
 
 @webhook.route('/receiver', methods=["POST"])
@@ -67,13 +47,23 @@ def receiver():
     try:
         data = request.json
         action_type = request.headers.get('X-GitHub-Event')
-
+        event = None
         if action_type == "push":
-            process_push_action(data)
-        elif action_type == "pull_request" and data["action"] == "opened":
-            process_pull_request_action(data)
-        elif action_type == "pull_request" and data["action"] == "closed" and data["pull_request"]["merged"]:
-            process_merge_action(data)
+            event = {
+                "request_id": data["head_commit"]["id"],
+                "author": data["sender"]["login"],
+                "action": "PUSH",
+                "to_branch": data["ref"].split("/")[-1],  # e.g. refs/heads/master
+                "timestamp": get_formatted_datetime_string(data["head_commit"]["timestamp"]),
+            }
+        elif action_type == "pull_request":
+            if data["action"] == "opened":
+                event = process_pull_request_action(data)
+            elif data["action"] == "closed" and data["pull_request"]["merged"]:
+                event = process_pull_request_action(data, is_merged=True)
+
+        if event:
+            mongo.db.events.insert_one(event)
         return {}, 201
     except Exception as e:
         print(e)
@@ -85,11 +75,21 @@ def get_events():
     try:
         last_event_id = request.args.get('last_event_id')
 
+        # To get events from the last 15 seconds, we need to turn datetime into ObjectId
+        fifteen_seconds_ago = datetime.utcnow() - timedelta(seconds=15)
+        fifteen_seconds_ago_object_id = ObjectId.from_datetime(fifteen_seconds_ago)
+
+        query = {"_id": {"$gt": fifteen_seconds_ago_object_id}}
         if last_event_id:
-            # Fetch events that occurred after the last fetched ObjectId
-            events = list(mongo.db.events.find({'_id': {'$gt': ObjectId(last_event_id)}}).sort('_id', -1))
-        else:
-            events = list(mongo.db.events.find().sort('_id', -1))
+            query = {
+                "$and": [
+                    {"_id": {"$gt": ObjectId(last_event_id)}},
+                    query
+                ]
+            }
+
+        # Fetch events in latest first order
+        events = list(mongo.db.events.find(query).sort('_id', -1))
 
         # Convert ObjectId to string for JSON response
         for event in events:

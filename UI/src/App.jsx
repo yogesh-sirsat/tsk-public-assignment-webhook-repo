@@ -4,14 +4,21 @@ import {BookUp, GitMerge, GitPullRequestArrow} from "lucide-react";
 const App = () => {
   const [events, setEvents] = useState([]);
   const [lastEventId, setLastEventId] = useState();
+  const backendURL = import.meta.env.VITE_BACKEND_URL;
 
   useEffect(() => {
     const fetchEvents = async () => {
+      let currentLastEventId = lastEventId;
 
-      // Fetch only new events since the lastEventId
-      const url = new URL('http://localhost:5000/webhook/get-events');
-      if (lastEventId) {
-        url.searchParams.append('last_event_id', lastEventId);
+      // If currentLastEventId is not set this means page is refreshed or new,
+      // so get it from localStorage
+      if (!currentLastEventId) {
+        currentLastEventId = localStorage.getItem('last_event_id');  // Null if not found
+      }
+
+      const url = new URL("/webhook/get-events", backendURL);
+      if (currentLastEventId) {
+        url.searchParams.append('last_event_id', currentLastEventId);
       }
       const response = await fetch(url);
       const data = await response.json();
@@ -19,21 +26,19 @@ const App = () => {
       // Update the events list and set the new lastEventId
       if (data.length > 0) {
         const latestEventId = data[0]._id;
-        console.log(lastEventId, latestEventId);
-        if (lastEventId !== latestEventId) {
-          setEvents(prevEvents => [...data, ...prevEvents]);
-        }
+        setEvents(data);
         setLastEventId(latestEventId);
+        localStorage.setItem('last_event_id', latestEventId);
       }
     };
 
     fetchEvents();
-    const interval = setInterval(fetchEvents, 15000); // Poll every 15 seconds
+    const interval = setInterval(fetchEvents, 15000);  // Poll every 15 seconds
 
     return () => {
       clearInterval(interval);
     };
-  }, [lastEventId]);
+  }, [backendURL, lastEventId]);
 
 
   const getPushActionString = (event) => {
