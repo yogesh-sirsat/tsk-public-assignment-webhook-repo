@@ -34,11 +34,11 @@ def process_pull_request_action(data, is_merged=False):
         "action": "PULL_REQUEST",
         "from_branch": data["pull_request"]["head"]["ref"],
         "to_branch": data["pull_request"]["base"]["ref"],
-        "timestamp": get_formatted_datetime_string(data["pull_request"]["created_at"]),
+        "timestamp": data["pull_request"]["created_at"],
     }
     if is_merged:
         event["action"] = "MERGE"
-        event["timestamp"] = get_formatted_datetime_string(data["pull_request"]["merged_at"])
+        event["timestamp"] = data["pull_request"]["merged_at"]
     return event
 
 
@@ -54,7 +54,7 @@ def receiver():
                 "author": data["sender"]["login"],
                 "action": "PUSH",
                 "to_branch": data["ref"].split("/")[-1],  # e.g. refs/heads/master
-                "timestamp": get_formatted_datetime_string(data["head_commit"]["timestamp"]),
+                "timestamp": data["head_commit"]["timestamp"],
             }
         elif action_type == "pull_request":
             if data["action"] == "opened":
@@ -63,6 +63,7 @@ def receiver():
                 event = process_pull_request_action(data, is_merged=True)
 
         if event:
+            event["timestamp"] = get_formatted_datetime_string(event["timestamp"])
             mongo.db.events.insert_one(event)
         return {}, 201
     except Exception as e:
