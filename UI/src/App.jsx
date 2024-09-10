@@ -29,6 +29,8 @@ const App = () => {
         setEvents(data);
         setLastEventId(latestEventId);
         localStorage.setItem('last_event_id', latestEventId);
+      } else {
+        setEvents([]);
       }
     };
 
@@ -38,7 +40,7 @@ const App = () => {
     return () => {
       clearInterval(interval);
     };
-  }, [backendURL, lastEventId]);
+  }, [backendURL]);
 
 
   const getPushActionString = (event) => {
